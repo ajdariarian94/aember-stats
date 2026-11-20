@@ -191,8 +191,20 @@ def container_manifest(root: Path, arch: str) -> Path:
     manifest["arch"] = arch
     manifest["rootfs"] = {"dir": str(stage_dir(root, arch))}
     manifest.setdefault("libs", {})["sysroot"] = str(sdk.sysroot(root, arch))
-    for f in manifest.get("files", []):  # paths are relative to the repo
-        f["src"] = str((root / f["src"]).resolve())
+    files = []
+    for f in manifest.get("files", []):
+        # "{sysroot}/..." is a file from the SDK's target sysroot; other paths
+        # are relative to the repo. "optional": skip it if the arch lacks it
+        # (e.g. glibc's locale archive on musl).
+        src = f["src"].replace("{sysroot}", str(sdk.sysroot(root, arch)))
+        src_path = (root / src).resolve()
+        if f.pop("optional", False) and not src_path.exists():
+            log.info("%s: no %s, skipped", arch, src)
+            continue
+        f["src"] = str(src_path)
+        files.append(f)
+    if "files" in manifest:
+        manifest["files"] = files
     path = root / "build" / "manifests" / arch / "aember-container.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2) + "\n")

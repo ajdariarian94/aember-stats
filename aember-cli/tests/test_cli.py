@@ -87,6 +87,35 @@ class ManifestTest(unittest.TestCase):
         for f in m.get("files", []):
             self.assertTrue(Path(f["src"]).is_absolute())
 
+    def test_sysroot_files_and_optional_ones(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "aember-container.json").write_text(
+                json.dumps(
+                    {
+                        "name": project.NAME,
+                        "command": ["/x"],
+                        "files": [
+                            {"src": "{sysroot}/etc/a", "dst": "/etc/a"},
+                            {"src": "{sysroot}/nope", "dst": "/n", "optional": True},
+                        ],
+                    }
+                )
+            )
+            with mock.patch.dict(os.environ, {"AEMBER_RESOURCES_DIR": "/res"}):
+                m = json.loads(
+                    build.container_manifest(root, "x64-poky-linux").read_text()
+                )
+        self.assertEqual(
+            m["files"],
+            [
+                {
+                    "src": "/res/x64-poky-linux/sdk/sysroots/core2-64-poky-linux/etc/a",
+                    "dst": "/etc/a",
+                }
+            ],
+        )
+
     def test_the_repo_manifest_is_valid_json_with_a_command(self):
         m = json.loads((ROOT / "aember-container.json").read_text())
         self.assertEqual(m["name"], project.NAME)
