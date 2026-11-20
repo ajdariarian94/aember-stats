@@ -8,3 +8,6 @@ NAME = "aember-stats"
 # with; v0.1.13 adds Qt to the SDKs (only aember-monitor needs it).
 RESOURCES_VERSION = "0.1.13"
 RESOURCES_REPO = "ajdariarian94/aember-resources"
+# Unit tests: "host" (host compiler, no target libraries needed) or "sdk"
+# (built with the x64 SDK and run through its loader: they need the SDK's Qt).
+TESTS = "host"

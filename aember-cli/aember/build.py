@@ -98,6 +98,60 @@ def host_tests(root: Path) -> None:
     run(["ctest", "--test-dir", str(bdir), "--output-on-failure"], root)
 
 
+TEST_ARCH = "x64-poky-linux"
+# glibc's loader in the x64 SDK sysroot (runs the SDK's binaries on the host)
+TEST_LOADER = "ld-linux-x86-64.so.2"
+
+
+def sdk_tests(root: Path) -> None:
+    """Build the unit tests with the x64 SDK and run each through the SDK's
+    loader, with the sysroot's libraries and Qt plugins (offscreen)."""
+    bdir = build_dir(root, TEST_ARCH, "Debug-tests")
+    toolchain = "$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake"
+    configure = shlex.join(
+        [
+            "cmake",
+            "-S",
+            str(root),
+            "-B",
+            str(bdir),
+            "-G",
+            "Ninja",
+            "-DCMAKE_BUILD_TYPE=Debug",
+            "-DBUILD_TESTS=ON",
+        ]
+    )
+    run(
+        sdk.shell(
+            root,
+            TEST_ARCH,
+            f'{configure} "-DCMAKE_TOOLCHAIN_FILE={toolchain}" && '
+            f"cmake --build {shlex.quote(str(bdir))} --parallel {jobs()}",
+        ),
+        root,
+        shell_cmd=True,
+    )
+    sysroot = sdk.sysroot(root, TEST_ARCH)
+    libs = ":".join(str(sysroot / d) for d in ("lib", "usr/lib"))
+    env = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_PLUGIN_PATH": str(sysroot / "usr" / "lib" / "plugins"),
+    }
+    env.pop("LD_LIBRARY_PATH", None)
+    tests = sorted(p for p in bdir.rglob("*-unittest") if p.is_file())
+    if not tests:
+        raise FileNotFoundError(f"No test binaries in {bdir}")
+    for test in tests:
+        log.info("Running %s", test.name)
+        subprocess.run(
+            [str(sysroot / "lib" / TEST_LOADER), "--library-path", libs, str(test)],
+            cwd=root,
+            env=env,
+            check=True,
+        )
+
+
 def container_manifest(root: Path, arch: str) -> Path:
     """aember-container.json for @p arch: the repo's manifest plus the arch
     and the SDK sysroot the libraries come from."""

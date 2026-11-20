@@ -84,7 +84,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "test":
             cli_tests(root)
             if not args.no_cpp:
-                build.host_tests(root)
+                if project.TESTS == "sdk":
+                    build.sdk_tests(root)
+                else:
+                    build.host_tests(root)
     except (FileNotFoundError, ValueError) as e:
         log.error("%s", e)
         return 1
