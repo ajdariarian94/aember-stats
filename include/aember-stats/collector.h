@@ -5,7 +5,7 @@
  * Everything is read from files, so the collector runs unprivileged inside
  * an LXC container: /proc and /sys (system-wide counters, the host's network
  * namespace with `"network": "host"`) and the heartbeat aember's PID 1 writes
- * to /var/log/aember-monitor.json, which aember-containerd binds into every
+ * to /var/log/aember-status.json, which aember-containerd binds into every
  * container at /host-logs.
  */
 #pragma once
@@ -70,7 +70,7 @@ struct Paths {
   std::filesystem::path proc = "/proc";
   std::filesystem::path sys = "/sys";
   /// aember's PID 1 heartbeat, as containerd binds it into containers.
-  std::filesystem::path heartbeat = "/host-logs/aember-monitor.json";
+  std::filesystem::path heartbeat = "/host-logs/aember-status.json";
   /// File systems to report (statvfs).
   std::vector<std::filesystem::path> disks = {"/host-logs"};
 };

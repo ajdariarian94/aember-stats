@@ -32,7 +32,7 @@ tools/aember-build-helper/         submodule
 
 - **Read files only.** The collector must run unprivileged in a container:
   /proc, /sys, `statvfs`, and the heartbeat at
-  `/host-logs/aember-monitor.json` (aember-containerd binds the device's
+  `/host-logs/aember-status.json` (aember-containerd binds the device's
   /var/log at /host-logs). No netlink, no root-only interfaces.
 - The heartbeat is embedded verbatim (`JsonObject()` only checks it is an
   object and puts it on one line); there is deliberately no JSON library.

@@ -15,7 +15,7 @@ Every second it samples:
 | Network bytes and rates per interface | `/proc/net/dev` (aember's network: `"network": "host"`) |
 | Disk space | `statvfs` of `/host-logs` (the device's `/var/log`) |
 | Temperatures | `/sys/class/thermal/thermal_zone*` |
-| aember itself: PID 1, services and containers, network state | the heartbeat aember's PID 1 writes to `/var/log/aember-monitor.json`, which aember-containerd binds into every container at `/host-logs` |
+| aember itself: PID 1, services and containers, network state | the heartbeat aember's PID 1 writes to `/var/log/aember-status.json`, which aember-containerd binds into every container at `/host-logs` |
 
 and writes one JSON object per line to every client of the Unix socket
 **`/run/aember-stats/stats.sock`**:
