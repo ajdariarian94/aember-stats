@@ -38,12 +38,17 @@ def out_dir(root: Path, arch: str) -> Path:
     return root / "build" / "aember-out" / arch
 
 
-def run(cmd: list[str] | str, cwd: Path, shell_cmd: bool = False) -> None:
+def run(
+    cmd: list[str] | str,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    shell_cmd: bool = False,
+) -> None:
     log.debug("$ %s", cmd if shell_cmd else shlex.join(cmd))
     if shell_cmd:
-        subprocess.run(["bash", "-c", cmd], cwd=cwd, check=True)
+        subprocess.run(["bash", "-c", cmd], cwd=cwd, env=env, check=True)
     else:
-        subprocess.run(cmd, cwd=cwd, check=True)
+        subprocess.run(cmd, cwd=cwd, env=env, check=True)
 
 
 def cross_build(root: Path, arch: str, build_type: str = "Release") -> Path:
@@ -77,9 +82,20 @@ def cross_build(root: Path, arch: str, build_type: str = "Release") -> Path:
     return stage
 
 
-def host_tests(root: Path) -> None:
-    """Build the unit tests with the host compiler and run them."""
-    bdir = root / "build" / "configure" / "host" / "Debug"
+SANITIZE_FLAGS = "-fsanitize=address,undefined -fno-omit-frame-pointer"
+SANITIZER_ENV = {
+    "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+    "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1",
+}
+
+
+def host_tests(root: Path, sanitize: bool = False) -> None:
+    """Build the unit tests with the host compiler and run them
+    (@p sanitize: ASan + UBSan)."""
+    variant = "Debug-asan" if sanitize else "Debug"
+    bdir = root / "build" / "configure" / "host" / variant
+    flags = {"CXXFLAGS": SANITIZE_FLAGS, "LDFLAGS": SANITIZE_FLAGS} if sanitize else {}
+    env = {**os.environ, **flags}
     run(
         [
             "cmake",
@@ -93,9 +109,15 @@ def host_tests(root: Path) -> None:
             "-DBUILD_TESTS=ON",
         ],
         root,
+        env,
     )
     run(["cmake", "--build", str(bdir), "--parallel", str(jobs())], root)
-    run(["ctest", "--test-dir", str(bdir), "--output-on-failure"], root)
+    subprocess.run(
+        ["ctest", "--test-dir", str(bdir), "--output-on-failure"],
+        cwd=root,
+        env={**os.environ, **(SANITIZER_ENV if sanitize else {})},
+        check=True,
+    )
 
 
 TEST_ARCH = "x64-poky-linux"
@@ -103,10 +125,19 @@ TEST_ARCH = "x64-poky-linux"
 TEST_LOADER = "ld-linux-x86-64.so.2"
 
 
-def sdk_tests(root: Path) -> None:
+def sdk_tests(root: Path, sanitize: bool = False) -> None:
     """Build the unit tests with the x64 SDK and run each through the SDK's
-    loader, with the sysroot's libraries and Qt plugins (offscreen)."""
-    bdir = build_dir(root, TEST_ARCH, "Debug-tests")
+    loader, with the sysroot's libraries and Qt plugins (offscreen).
+    @p sanitize: ASan + UBSan (the SDK's gcc-sanitizers, aember-resources
+    v0.1.8+)."""
+    bdir = build_dir(root, TEST_ARCH, "Debug-tests-asan" if sanitize else "Debug-tests")
+    # The SDK's environment-setup sets CXXFLAGS/LDFLAGS: append to them.
+    san = (
+        f'export CXXFLAGS="$CXXFLAGS {SANITIZE_FLAGS}" '
+        f'LDFLAGS="$LDFLAGS {SANITIZE_FLAGS}" && '
+        if sanitize
+        else ""
+    )
     toolchain = "$OECORE_NATIVE_SYSROOT/usr/share/cmake/OEToolchainConfig.cmake"
     configure = shlex.join(
         [
@@ -125,7 +156,7 @@ def sdk_tests(root: Path) -> None:
         sdk.shell(
             root,
             TEST_ARCH,
-            f'{configure} "-DCMAKE_TOOLCHAIN_FILE={toolchain}" && '
+            f'{san}{configure} "-DCMAKE_TOOLCHAIN_FILE={toolchain}" && '
             f"cmake --build {shlex.quote(str(bdir))} --parallel {jobs()}",
         ),
         root,
@@ -137,6 +168,7 @@ def sdk_tests(root: Path) -> None:
         **os.environ,
         "QT_QPA_PLATFORM": "offscreen",
         "QT_PLUGIN_PATH": str(sysroot / "usr" / "lib" / "plugins"),
+        **(SANITIZER_ENV if sanitize else {}),
     }
     env.pop("LD_LIBRARY_PATH", None)
     tests = sorted(p for p in bdir.rglob("*-unittest") if p.is_file())
@@ -200,6 +232,10 @@ def install(root: Path, arch: str, target: Path) -> None:
             str(root / BUILD_HELPER),
             "install",
             str(target),
+            "--manifest",
+            str(container_manifest(root, arch)),
+            "--arch",
+            arch,
             "--out",
             str(out_dir(root, arch)),
         ],

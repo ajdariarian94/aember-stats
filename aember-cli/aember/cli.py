@@ -61,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     arch_arg(p)
     p = sub.add_parser("test", help="unit tests")
     p.add_argument("--no-cpp", action="store_true", help="only the CLI tests")
+    p.add_argument(
+        "--sanitize", action="store_true", help="C++ tests with ASan + UBSan"
+    )
 
     args = ap.parse_args(argv)
     logging.basicConfig(
@@ -85,9 +88,9 @@ def main(argv: list[str] | None = None) -> int:
             cli_tests(root)
             if not args.no_cpp:
                 if project.TESTS == "sdk":
-                    build.sdk_tests(root)
+                    build.sdk_tests(root, sanitize=args.sanitize)
                 else:
-                    build.host_tests(root)
+                    build.host_tests(root, sanitize=args.sanitize)
     except (FileNotFoundError, ValueError) as e:
         log.error("%s", e)
         return 1
