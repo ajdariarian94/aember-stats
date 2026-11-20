@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests (C++ host build, CLI)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build g++-14
+      - name: Tests
+        env:
+          CXX: g++-14
+        run: python3 aember-cli/run.py test

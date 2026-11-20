@@ -1,0 +1,16 @@
+{
+  "name": "aember-stats",
+  "command": ["/usr/bin/aember-stats"],
+  "network": "host",
+  "restart_policy": "always",
+  "max_restart_attempts": 0,
+  "restart_delay": 2,
+  "stop_timeout": 5,
+  "console_log": true,
+  "compression": "xz",
+  "lxc": [
+    "# The socket the monitor reads: /run/aember-stats on the host (aember mounts /run as tmpfs), shared with aember-monitor",
+    "lxc.hook.pre-start = /bin/sh -c \"mkdir -p /run/aember-stats\"",
+    "lxc.mount.entry = /run/aember-stats run/aember-stats none bind,create=dir 0 0"
+  ]
+}

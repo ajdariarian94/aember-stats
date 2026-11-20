@@ -1,0 +1,26 @@
+{
+    "name": "aember-stats",
+    // aember's dev image: Ubuntu, cmake, ninja, docker CLI, squashfs-tools,
+    // QEMU, python. The aember-resources SDKs come with `aember sdk -a <arch>`.
+    "image": "ghcr.io/ajdariarian94/aember-dev:latest",
+    "runArgs": [
+        "--net=host",
+        "--ulimit", "core=0",
+        "-v", "/var/run/docker.sock:/var/run/docker.sock",
+        "-e", "DOCKER_HOST=unix:///var/run/docker.sock"
+    ],
+    "workspaceFolder": "/aember_ws/aember-stats",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/aember_ws/aember-stats,type=bind",
+    "remoteUser": "dev",
+    "postStartCommand": "git -C /aember_ws/aember-stats submodule update --init",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "anthropic.claude-code",
+                "ms-vscode.cmake-tools",
+                "llvm-vs-code-extensions.vscode-clangd",
+                "ms-python.python"
+            ]
+        }
+    }
+}
