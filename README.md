@@ -51,7 +51,7 @@ aember-cli/run.py build -a aarch64-poky-linux   # → build/stage/<arch>/
 aember-cli/run.py pack  -a aarch64-poky-linux   # → build/aember-out/<arch>/aember-stats/
 aember-cli/run.py install -a aarch64-poky-linux ../aember   # into aember's overlay
 aember-cli/run.py all   -a aarch64-poky-linux   # sdk + build + pack
-aember-cli/run.py test                          # unit tests (host build) + CLI tests
+aember-cli/run.py test                          # unit tests (host build)
 ```
 
 Architectures: `x64-poky-linux`, `aarch64-poky-linux`, `arm-poky-linux`,

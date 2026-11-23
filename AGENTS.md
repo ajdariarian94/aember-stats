@@ -24,7 +24,8 @@ include/aember-stats/server.h      Unix socket, one line per client per sample
 src/                               collector.cpp, server.cpp, main.cpp (flags)
 tests/                             GoogleTest (host build), fixtures in tests/data/
 aember-container.json              the container manifest (aember-build-helper)
-aember-cli/                        `aember` CLI: sdk, build, pack, install, test, all
+aember-cli/run.py                  `aember` CLI: sdk, build, pack, install, test, all
+                                   (aember-build-helper's project-cli/, told NAME etc.)
 tools/aember-build-helper/         submodule
 ```
 
@@ -46,16 +47,17 @@ tools/aember-build-helper/         submodule
 - The CLI (`aember-cli/`, called `aember` like in the sibling repos) is
   Python 3.10+ standard library only and is run through `run.py`; never
   `pip install` it (aember's dev container has aember's own `aember`
-  package). It is shared with aember-monitor: `aember/project.py` holds
-  what differs.
+  package). It is shared with aember-monitor, aember-auth and aember-fleet and
+  lives in the aember-build-helper submodule (`project-cli/`);
+  `aember-cli/run.py` holds what differs. Change the CLI there.
 - WSL crashes when builds use every core: `jobs()` uses 2/3 of the CPUs
   (`AEMBER_BUILD_JOBS` overrides).
 
 ## Builds and tests
 
 - Cross builds source the SDK's `environment-setup-<sysroot>` and use its
-  `OEToolchainConfig.cmake` (`aember/build.py`); no toolchain files here.
-- `aember-cli/run.py test`: the CLI tests, then a host build with
+  `OEToolchainConfig.cmake` (build-helper's `project-cli/aember_project/build.py`); no toolchain files here.
+- `aember-cli/run.py test`: a host build with
   `-DBUILD_TESTS=ON` (GoogleTest via FetchContent, pinned by hash) and ctest.
 - Before calling a change done: `run.py test`, a cross build + pack of at
   least x64, and, for anything the device sees, the container in aember
