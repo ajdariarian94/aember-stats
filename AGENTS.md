@@ -70,6 +70,13 @@ tools/aember-build-helper/         submodule
   `aember app launch --headless` there).
 - C++23, `-Werror`, clang-format (`.clang-format` from aember). Python:
   black, 88 columns.
+- Mutation testing: `aember-cli/run.py mutate [-n N] [-f FILE]` (the shared
+  mutator from aember-build-helper: one operator flipped at a time in
+  `src/*.cpp` except main.cpp, the unit tests rebuilt and run; report in
+  `build/mutation/`). Weekly in CI (`.github/workflows/mutation.yml`, the
+  survivors in the run summary). Score 2026-11-25: 77.3% -> 85.2% (216
+  mutants; the strict JSON checker's refusals and the UTF-8 ranges got
+  tests). Write a test for a real gap, judge the rest equivalent.
 - Fuzzing: `fuzz/run.sh [SECONDS] [TARGET...]` (CI: 60 s per target, the
   `fuzz` job; needs clang-18, libclang-rt-18-dev, nlohmann-json3-dev).
   `fuzz_parsers` (the /proc parsers), `fuzz_json` (JsonString/JsonObject)
