@@ -65,6 +65,9 @@ tools/aember-build-helper/         submodule
   `aember app launch --headless` there).
 - C++23, `-Werror`, clang-format (`.clang-format` from aember). Python:
   black, 88 columns.
+- A test that pins down a fixed bug starts with a comment
+  `Regression: <the bug>` (`grep -rn "Regression:"` lists them). Every bug
+  fix gets one.
 
 ## Working agreements
 
