@@ -111,6 +111,64 @@ TEST(Json, ObjectsMustBeValidJson) {
   EXPECT_FALSE(JsonObject(deep + "}"));  // nesting is limited
 }
 
+// Every way out of the strict checker (the mutation run found most of them
+// untested): each of these must be refused, the near misses accepted.
+TEST(Json, StrictCheckerRefusesEachBrokenPart) {
+  for (const char* bad : {
+           R"( [] )",            // not an object
+           R"({"a" 1})",         // no colon
+           R"({"a":1 "b":2})",   // no comma between members
+           R"({1:2})",           // key isn't a string
+           R"({"a":[1 2]})",     // no comma in an array
+           R"({"a":[1,]})",      // trailing comma in an array
+           R"({"a":tru})",       // cut-off literal
+           R"({"a":"open)",      // no closing quote
+           R"({"a":"\)",         // escape at the end
+           R"({"a":"\u12"})",    // short \u
+           R"({"a":"\u12g4"})",  // not hex
+           R"({"a":1.})",        // no fraction digits
+           R"({"a":1e})",        // no exponent digits
+           R"({"a":-})",         // no digits
+           R"({"a")",            // cut off after a key
+           "{\"a\":\"\x01\"}",   // a control character
+       }) {
+    EXPECT_FALSE(JsonObject(bad)) << bad;
+  }
+  for (const char* good : {
+           R"({"a":[]})",
+           R"({"a":[1,2]})",
+           R"({"a":"é\n\"\\\/"})",
+           R"({"a":-0.5E+2})",
+           R"( {"a" : { "b" : null } } )",
+       }) {
+    EXPECT_TRUE(JsonObject(good)) << good;
+  }
+}
+
+TEST(Json, Utf8SequencesOfEveryLength) {
+  // Valid: 2, 3 and 4 bytes, at the edges of their ranges.
+  for (const std::string ok : {"\xc2\x80",
+                               "\xe0\xa0\x80",
+                               "\xef\xbf\xbf",
+                               "\xed\x9f\xbf",
+                               "\xf0\x90\x80\x80",
+                               "\xf4\x8f\xbf\xbf"}) {
+    EXPECT_EQ(JsonString(ok), "\"" + ok + "\"");
+  }
+  // Invalid: overlong 3/4-byte forms, above U+10FFFF, bad continuation
+  // bytes, a lead byte that starts nothing.
+  for (const std::string bad : {"\xe0\x9f\xbf",
+                                "\xf0\x8f\xbf\xbf",
+                                "\xf4\x90\x80\x80",
+                                "\xe1\x80\x7f",
+                                "\xe1\xc0\x80",
+                                "\xf5\x80\x80\x80"}) {
+    const auto out = JsonString(bad);
+    EXPECT_NE(out.find("\\ufffd"), std::string::npos) << out;
+    EXPECT_EQ(out.find(bad), std::string::npos) << out;
+  }
+}
+
 // Regression: bytes that aren't UTF-8 (an interface or sensor name) were
 // copied into the JSON string as they were (found by fuzz_json).
 TEST(Json, StringsAreUtf8) {
