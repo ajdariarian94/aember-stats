@@ -23,6 +23,7 @@ include/aember-stats/collector.h   sampling + the pure /proc parsers
 include/aember-stats/server.h      Unix socket, one line per client per sample
 src/                               collector.cpp, server.cpp, main.cpp (flags)
 tests/                             GoogleTest (host build), fixtures in tests/data/
+fuzz/                              libFuzzer targets (clang, ASan + UBSan), corpus, run.sh
 aember-container.json              the container manifest (aember-build-helper)
 aember-cli/run.py                  `aember` CLI: sdk, build, pack, install, test, all
                                    (aember-build-helper's project-cli/, told NAME etc.)
@@ -35,8 +36,12 @@ tools/aember-build-helper/         submodule
   /proc, /sys, `statvfs`, and the heartbeat at
   `/host-logs/aember-status.json` (aember-containerd binds the device's
   /var/log at /host-logs). No netlink, no root-only interfaces.
-- The heartbeat is embedded verbatim (`JsonObject()` only checks it is an
-  object and puts it on one line); there is deliberately no JSON library.
+- The heartbeat is embedded verbatim, after `JsonObject()` checked it is
+  strictly valid JSON (RFC 8259, UTF-8, numbers that fit a double, nesting
+  up to 64) and put it on one line: one broken heartbeat must not make the
+  whole line unreadable for the monitor. `JsonString()` writes U+FFFD for
+  bytes that aren't UTF-8. There is deliberately no JSON library (the fuzz
+  targets use nlohmann/json only to check the output).
 - Parsers are pure functions over text, unit-tested with fixtures. A missing
   or unreadable file leaves its section out (or empty), never an error.
 - The socket server never blocks the sampling loop: non-blocking sends, a
@@ -65,6 +70,12 @@ tools/aember-build-helper/         submodule
   `aember app launch --headless` there).
 - C++23, `-Werror`, clang-format (`.clang-format` from aember). Python:
   black, 88 columns.
+- Fuzzing: `fuzz/run.sh [SECONDS] [TARGET...]` (CI: 60 s per target, the
+  `fuzz` job; needs clang-18, libclang-rt-18-dev, nlohmann-json3-dev).
+  `fuzz_parsers` (the /proc parsers), `fuzz_json` (JsonString/JsonObject)
+  and `fuzz_sample` (Collector::Sample over a fuzzed /proc, /sys and
+  heartbeat: every line must parse as one JSON object). A crash gets a fix,
+  a `Regression:` test and its input in `fuzz/corpus/<target>/`.
 - A test that pins down a fixed bug starts with a comment
   `Regression: <the bug>` (`grep -rn "Regression:"` lists them). Every bug
   fix gets one.

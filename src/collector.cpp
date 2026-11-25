@@ -3,7 +3,9 @@
  * @brief /proc, /sys and heartbeat sampling (see collector.h).
  */
 #include <algorithm>
+#include <cctype>
 #include <charconv>
+#include <cmath>
 #include <ctime>
 #include <format>
 #include <fstream>
@@ -66,6 +68,186 @@ std::string Fixed(double value) {
   return std::format("{:.1f}", value);
 }
 
+/// Length of the valid UTF-8 sequence at @p s[i] (1-4), 0 if it isn't one
+/// (stray continuation bytes, overlong forms, surrogates, > U+10FFFF).
+std::size_t Utf8Length(std::string_view s, std::size_t i) {
+  const auto b = [&](std::size_t k) {
+    return static_cast<unsigned char>(s[i + k]);
+  };
+  const auto c0 = b(0);
+  if (c0 < 0x80) return 1;
+  std::size_t n = 0;
+  unsigned lo = 0x80, hi = 0xbf;  // the second byte's range
+  if (c0 >= 0xc2 && c0 <= 0xdf) {
+    n = 2;
+  } else if (c0 >= 0xe0 && c0 <= 0xef) {
+    n = 3;
+    if (c0 == 0xe0) lo = 0xa0;  // overlong
+    if (c0 == 0xed) hi = 0x9f;  // surrogates
+  } else if (c0 >= 0xf0 && c0 <= 0xf4) {
+    n = 4;
+    if (c0 == 0xf0) lo = 0x90;  // overlong
+    if (c0 == 0xf4) hi = 0x8f;  // > U+10FFFF
+  } else {
+    return 0;
+  }
+  if (i + n > s.size() || b(1) < lo || b(1) > hi) return 0;
+  for (std::size_t k = 2; k < n; ++k) {
+    if (b(k) < 0x80 || b(k) > 0xbf) return 0;
+  }
+  return n;
+}
+
+/// A strict RFC 8259 check (UTF-8, no NaN/Infinity, numbers that fit a
+/// double), so what JsonObject() passes through parses in every viewer.
+class JsonCheck {
+ public:
+  explicit JsonCheck(std::string_view text) : t_(text) {}
+
+  bool Object() {
+    Space();
+    if (!Peek('{')) return false;
+    if (!Value(0)) return false;
+    Space();
+    return i_ == t_.size();
+  }
+
+ private:
+  static constexpr int kMaxDepth = 64;
+
+  bool Peek(char c) const { return i_ < t_.size() && t_[i_] == c; }
+  bool Eat(char c) {
+    if (!Peek(c)) return false;
+    ++i_;
+    return true;
+  }
+  void Space() {
+    while (i_ < t_.size() && (t_[i_] == ' ' || t_[i_] == '\t' ||
+                              t_[i_] == '\n' || t_[i_] == '\r')) {
+      ++i_;
+    }
+  }
+  bool Word(std::string_view w) {
+    if (t_.substr(i_, w.size()) != w) return false;
+    i_ += w.size();
+    return true;
+  }
+
+  bool Value(int depth) {
+    if (depth > kMaxDepth) return false;
+    Space();
+    if (i_ >= t_.size()) return false;
+    switch (t_[i_]) {
+      case '{':
+        return Members(depth);
+      case '[':
+        return Elements(depth);
+      case '"':
+        return String();
+      case 't':
+        return Word("true");
+      case 'f':
+        return Word("false");
+      case 'n':
+        return Word("null");
+      default:
+        return Number();
+    }
+  }
+
+  bool Members(int depth) {
+    ++i_;  // {
+    Space();
+    if (Eat('}')) return true;
+    while (true) {
+      Space();
+      if (!String()) return false;
+      Space();
+      if (!Eat(':') || !Value(depth + 1)) return false;
+      Space();
+      if (Eat('}')) return true;
+      if (!Eat(',')) return false;
+    }
+  }
+
+  bool Elements(int depth) {
+    ++i_;  // [
+    Space();
+    if (Eat(']')) return true;
+    while (true) {
+      if (!Value(depth + 1)) return false;
+      Space();
+      if (Eat(']')) return true;
+      if (!Eat(',')) return false;
+    }
+  }
+
+  bool String() {
+    if (!Eat('"')) return false;
+    while (i_ < t_.size()) {
+      const auto c = static_cast<unsigned char>(t_[i_]);
+      if (c == '"') {
+        ++i_;
+        return true;
+      }
+      if (c < 0x20) return false;
+      if (c == '\\') {
+        if (++i_ >= t_.size()) return false;
+        const char e = t_[i_++];
+        if (e == 'u') {
+          if (i_ + 4 > t_.size()) return false;
+          for (int k = 0; k < 4; ++k) {
+            if (!std::isxdigit(static_cast<unsigned char>(t_[i_++])))
+              return false;
+          }
+        } else if (std::string_view{"\"\\/bfnrt"}.find(e) ==
+                   std::string_view::npos) {
+          return false;
+        }
+        continue;
+      }
+      const auto n = Utf8Length(t_, i_);
+      if (n == 0) return false;
+      i_ += n;
+    }
+    return false;  // no closing quote
+  }
+
+  bool Number() {
+    const auto start = i_;
+    Eat('-');
+    if (Eat('0')) {
+    } else if (Digits() == 0) {
+      return false;
+    }
+    if (Eat('.') && Digits() == 0) return false;
+    if (Eat('e') || Eat('E')) {
+      if (!Eat('+')) Eat('-');
+      if (Digits() == 0) return false;
+    }
+    double value = 0;  // must fit a double (1e999 doesn't)
+    const auto* first = t_.data() + start;
+    const auto [ptr, ec] = std::from_chars(first, t_.data() + i_, value);
+    return ec == std::errc{} && ptr == t_.data() + i_;
+  }
+
+  std::size_t Digits() {
+    const auto start = i_;
+    while (i_ < t_.size() && t_[i_] >= '0' && t_[i_] <= '9') ++i_;
+    return i_ - start;
+  }
+
+  std::string_view t_;
+  std::size_t i_ = 0;
+};
+
+/// A finite, non-negative number of /proc (nan, inf and -1 aren't).
+std::optional<double> Finite(std::string_view text) {
+  const auto v = Number<double>(text);
+  if (!v || !std::isfinite(*v) || *v < 0) return std::nullopt;
+  return v;
+}
+
 }  // namespace
 
 std::optional<CpuTimes> ParseProcStat(std::string_view text) {
@@ -119,9 +301,9 @@ std::optional<Memory> ParseMeminfo(std::string_view text) {
 std::optional<Load> ParseLoadavg(std::string_view text) {
   const auto f = Fields(Trim(text));
   if (f.size() < 3) return std::nullopt;
-  const auto one = Number<double>(f[0]);
-  const auto five = Number<double>(f[1]);
-  const auto fifteen = Number<double>(f[2]);
+  const auto one = Finite(f[0]);
+  const auto five = Finite(f[1]);
+  const auto fifteen = Finite(f[2]);
   if (!one || !five || !fifteen) return std::nullopt;
   return Load{*one, *five, *fifteen};
 }
@@ -129,7 +311,10 @@ std::optional<Load> ParseLoadavg(std::string_view text) {
 std::optional<double> ParseUptime(std::string_view text) {
   const auto f = Fields(Trim(text));
   if (f.empty()) return std::nullopt;
-  return Number<double>(f[0]);
+  const auto up = Finite(f[0]);
+  // Whole seconds go out as an integer: keep it in range.
+  if (!up || *up > 1e15) return std::nullopt;
+  return up;
 }
 
 std::map<std::string, NetCounters> ParseNetDev(std::string_view text) {
@@ -151,7 +336,8 @@ std::map<std::string, NetCounters> ParseNetDev(std::string_view text) {
 
 std::string JsonString(std::string_view text) {
   std::string out = "\"";
-  for (const unsigned char c : text) {
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const auto c = static_cast<unsigned char>(text[i]);
     switch (c) {
       case '"':
         out += "\\\"";
@@ -171,8 +357,11 @@ std::string JsonString(std::string_view text) {
       default:
         if (c < 0x20) {
           out += std::format("\\u{:04x}", static_cast<unsigned>(c));
+        } else if (const auto n = Utf8Length(text, i); n == 0) {
+          out += "\\ufffd";  // not UTF-8 (an interface or sensor name)
         } else {
-          out += static_cast<char>(c);
+          out.append(text.substr(i, n));
+          i += n - 1;
         }
     }
   }
@@ -182,6 +371,9 @@ std::string JsonString(std::string_view text) {
 std::optional<std::string> JsonObject(std::string_view text) {
   const auto t = Trim(text);
   if (t.size() < 2 || t.front() != '{' || t.back() != '}') return std::nullopt;
+  // A half-written or broken heartbeat would make the whole line invalid
+  // and the monitor drop the sample: only valid JSON goes through.
+  if (!JsonCheck{t}.Object()) return std::nullopt;
   // One line on the wire: drop raw newlines (legal JSON whitespace only).
   std::string out{t};
   std::ranges::replace(out, '\n', ' ');
@@ -239,7 +431,7 @@ std::string Collector::Sample() {
 
   if (const auto mem = ParseMeminfo(ReadFile(paths_.proc / "meminfo"))) {
     const double used =
-        mem->total_kb == 0
+        mem->total_kb == 0 || mem->available_kb >= mem->total_kb
             ? 0.0
             : 100.0 * static_cast<double>(mem->total_kb - mem->available_kb) /
                   static_cast<double>(mem->total_kb);
