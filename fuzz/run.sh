@@ -2,7 +2,7 @@
 # Build the libFuzzer targets (clang, ASan + UBSan) and fuzz each one.
 #
 #   fuzz/run.sh [SECONDS] [TARGET...]     default: 60 s, every target
-#   fuzz/run.sh 0 fuzz_socket            only build + replay the corpus
+#   fuzz/run.sh 0 fuzz_json              only build + replay the corpus
 #
 # Needs clang-18 with libFuzzer (libclang-rt-18-dev; llvm-18 for symbolized
 # stack traces), cmake, ninja,
