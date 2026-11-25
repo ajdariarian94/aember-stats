@@ -141,3 +141,10 @@ TEST(Collector, MissingFilesGiveASampleWithoutThem) {
   EXPECT_NE(s.find("\"net\":[]"), std::string::npos);
   EXPECT_NE(s.find("\"disks\":[]"), std::string::npos);
 }
+
+// Regression: after aember renamed its status file to aember-status.json,
+// the default still read aember-monitor.json and every sample had
+// "aember":null.
+TEST(Collector, DefaultStatusFileIsAembersCurrentName) {
+  EXPECT_EQ(Paths{}.heartbeat, "/host-logs/aember-status.json");
+}
