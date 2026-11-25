@@ -1,0 +1,38 @@
+# Mutation testing of the C++ unit tests (`aember-cli/run.py mutate`, the
+# shared mutator from aember-build-helper), weekly and by hand: too slow for
+# every pull request. The summary lists the score and every survivor (a line
+# no test checks: write a test, or judge it equivalent). Scores: AGENTS.md.
+name: Mutation
+
+on:
+  schedule:
+    - cron: "23 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutate:
+    name: Mutation (C++ host build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build g++-14
+      - name: Mutate
+        env:
+          CXX: g++-14
+        run: python3 aember-cli/run.py mutate
+      - name: Summary
+        if: always()
+        run: cat build/mutation/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation
+          path: build/mutation/
+          if-no-files-found: ignore
