@@ -60,10 +60,12 @@ std::optional<double> ParseUptime(std::string_view text);
 /// Interfaces of /proc/net/dev (loopback skipped) → byte counters.
 std::map<std::string, NetCounters> ParseNetDev(std::string_view text);
 
-/// A JSON string literal (quotes and escapes included).
+/// A JSON string literal (quotes and escapes included; bytes that aren't
+/// UTF-8 become U+FFFD).
 std::string JsonString(std::string_view text);
 /// @p text if it is a JSON object (starts with '{' and ends with '}' after
-/// trimming), else nullopt. The heartbeat is embedded verbatim, not parsed.
+/// trimming) and strictly valid JSON (UTF-8, finite numbers, nesting up to
+/// 64), else nullopt; on one line. The heartbeat goes out as it is, checked.
 std::optional<std::string> JsonObject(std::string_view text);
 
 struct Paths {

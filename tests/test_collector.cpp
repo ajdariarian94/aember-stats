@@ -84,6 +84,52 @@ TEST(Json, EscapesStringsAndKeepsObjectsOnOneLine) {
   EXPECT_FALSE(JsonObject("{\"truncated\":"));
 }
 
+// Regression: JsonObject() only looked at the braces, so a broken heartbeat
+// went out verbatim, the whole stats line wasn't JSON and aember-monitor
+// dropped the sample (found by fuzz_sample).
+TEST(Json, ObjectsMustBeValidJson) {
+  EXPECT_TRUE(JsonObject(R"({"a":[1,-2.5e3,true,false,null,{"b":"é\n"}]})"));
+  EXPECT_TRUE(JsonObject("{}"));
+  for (const char* bad :
+       {R"({"a":})",
+        R"({"services":[{"1e309:"x"}]})",
+        R"({"a":1,})",
+        R"({"a":01})",
+        R"({"a":1e999})",  // doesn't fit a double: strict parsers refuse it
+        R"({"a":"\x"})",
+        R"({"a":NaN})",
+        "{\"a\":\"tab\tin a string\"}",
+        "{\"a\":\"\xff\"}",          // not UTF-8
+        "{\"a\":\"\xed\xa0\x80\"}",  // a surrogate
+        "{\"a\":\"\xc0\xaf\"}",      // overlong
+        "{} {}"}) {
+    EXPECT_FALSE(JsonObject(bad)) << bad;
+  }
+  std::string deep = "{\"a\":";
+  for (int i = 0; i < 200; ++i) deep += "[";
+  for (int i = 0; i < 200; ++i) deep += "]";
+  EXPECT_FALSE(JsonObject(deep + "}"));  // nesting is limited
+}
+
+// Regression: bytes that aren't UTF-8 (an interface or sensor name) were
+// copied into the JSON string as they were (found by fuzz_json).
+TEST(Json, StringsAreUtf8) {
+  EXPECT_EQ(JsonString("eth0\xff"), R"("eth0\ufffd")");
+  EXPECT_EQ(JsonString("caf\xc3\xa9"), "\"caf\xc3\xa9\"");
+  EXPECT_EQ(JsonString("\xe2\x82"), R"("\ufffd\ufffd")");  // cut off
+}
+
+// Regression: "inf" or "nan" in /proc/loadavg or /proc/uptime gave
+// "inf" in the JSON and undefined behaviour in the integer conversion of
+// the uptime (found by fuzz_parsers).
+TEST(ParseLoadavgAndUptime, OnlyFiniteNumbers) {
+  EXPECT_FALSE(ParseLoadavg("inf 0.1 0.1 1/80 1"));
+  EXPECT_FALSE(ParseLoadavg("0.1 nan 0.1 1/80 1"));
+  EXPECT_FALSE(ParseUptime("inf 1"));
+  EXPECT_FALSE(ParseUptime("1e300 1"));
+  EXPECT_FALSE(ParseUptime("-5 1"));
+}
+
 TEST(Collector, FirstSampleHasEverySection) {
   Collector c{FixturePaths()};
   const auto s = c.Sample();

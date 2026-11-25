@@ -62,6 +62,19 @@ already downloaded: `export AEMBER_RESOURCES_DIR=/aember_ws/aember/build/aember-
 Packing uses [aember-build-helper](https://github.com/ajdariarian94/aember-build-helper)
 (submodule in `tools/`), with `aember-container.json` as the manifest.
 
+## Fuzzing
+
+The collector's inputs (/proc, /sys, the heartbeat) have libFuzzer targets
+in `fuzz/` that also check every line is valid JSON. On Ubuntu 24.04:
+
+```bash
+sudo apt-get install clang-18 llvm-18 libclang-rt-18-dev cmake ninja-build \
+    nlohmann-json3-dev
+fuzz/run.sh            # every target for 60 s (CI does the same)
+```
+
+Crashing inputs land in `build/fuzz/crashes/<target>/`.
+
 ## Run it outside aember
 
 ```bash

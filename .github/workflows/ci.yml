@@ -19,3 +19,29 @@ jobs:
         env:
           CXX: g++-14
         run: python3 aember-cli/run.py test
+
+  fuzz:
+    name: Fuzz (libFuzzer + ASan/UBSan, 60 s per target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: >-
+          sudo apt-get update && sudo apt-get install -y clang-18 llvm-18
+          libclang-rt-18-dev ninja-build nlohmann-json3-dev
+      # The corpus grows from run to run: what the fuzzer found is kept.
+      - uses: actions/cache@v4
+        with:
+          path: build/fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - name: Fuzz
+        run: fuzz/run.sh 60
+      - name: Crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            build/fuzz/crashes
+            build/fuzz/*.log
